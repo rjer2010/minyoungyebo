@@ -1,6 +1,6 @@
 # requirements.txt
 streamlit>=1.32.0
-tensorflow>=2.15.0
+tensorflow==2.15.1        # Python 3.11에서 안정적으로 검증된 버전
 xgboost>=2.0.0
 lightgbm>=4.3.0
 scikit-learn>=1.4.0
