@@ -270,7 +270,7 @@ def build_features(df):
 def fetch_recent_obs(nx, ny, api_key):
     rows = []
     now = datetime.now()
-    for h in range(48, 0, -1):
+    for h in range(72, 0, -1):
         dt = now - timedelta(hours=h)
         base_date = dt.strftime("%Y%m%d")
         base_time = f"{dt.hour:02d}00"
@@ -441,7 +441,7 @@ else:
     with st.spinner(f"🌐 {city_name} 최근 기상 데이터 수집 중..."):
         df_raw = fetch_recent_obs(nx, ny, api_key)
 
-    if df_raw is None or len(df_raw) < SEQ_LEN:
+    if df_raw is None or len(df_raw) < 12:
         st.markdown(f"""
         <div class="error-box">
         ❗ 관측 데이터가 부족합니다 (수집: {len(df_raw) if df_raw is not None else 0}행 / 필요: {SEQ_LEN}행 이상).<br>
