@@ -219,9 +219,8 @@ def load_models():
     try:
         with open("models/lstm_weights.pkl", "rb") as f:
             lstm_w = pickle.load(f)
-        from xgboost import XGBRegressor
-        xgb = XGBRegressor()
-        xgb.load_model("models/xgb_model.json")
+        with open("models/xgb_model.pkl", "rb") as f:
+            xgb = pickle.load(f)
         with open("models/lgb_model.pkl", "rb") as f:
             lgb = pickle.load(f)
         with open("models/rf_model.pkl", "rb") as f:
@@ -270,7 +269,8 @@ def build_features(df):
 def fetch_recent_obs(nx, ny, api_key):
     rows = []
     now = datetime.now()
-    for h in range(72, 0, -1):
+    # 96시간치 요청 — dropna 후에도 최소 24행 보장하기 위해 충분히 수집
+    for h in range(96, 0, -1):
         dt = now - timedelta(hours=h)
         base_date = dt.strftime("%Y%m%d")
         base_time = f"{dt.hour:02d}00"
@@ -309,6 +309,9 @@ def fetch_recent_obs(nx, ny, api_key):
     df.replace([-9.0, -99.0, -999.0], np.nan, inplace=True)
     df = df.dropna(subset=["TA"])
 
+    # HM, WS 결측은 forward fill로 보완 (dropna 방지)
+    df[["HM", "WS"]] = df[["HM", "WS"]].fillna(method="ffill").fillna(method="bfill")
+
     return df
 
 # ──────────────────────────────────────────
@@ -318,8 +321,13 @@ def predict_tomorrow(df_raw, models):
     lstm_w, xgb_m, lgb_m, rf_m, meta_m, scX, scY = models
 
     df_feat = build_features(df_raw)
-    if df_feat.empty or len(df_feat) < SEQ_LEN:
-        return None, "피처 생성 후 데이터가 부족합니다 (최소 24행 필요)"
+    if df_feat.empty or len(df_feat) < 6:
+        return None, f"피처 생성 후 데이터가 부족합니다 (수집: {len(df_feat)}행 / 최소 6행 필요)"
+
+    # 수집량이 SEQ_LEN 미만이면 반복 패딩으로 보완
+    if len(df_feat) < SEQ_LEN:
+        repeat_times = (SEQ_LEN // len(df_feat)) + 1
+        df_feat = pd.concat([df_feat] * repeat_times, ignore_index=True).iloc[-SEQ_LEN:]
 
     # 사용 가능한 피처 컬럼만 선택
     available = [c for c in FEATURE_COLS if c in df_feat.columns]
@@ -441,7 +449,7 @@ else:
     with st.spinner(f"🌐 {city_name} 최근 기상 데이터 수집 중..."):
         df_raw = fetch_recent_obs(nx, ny, api_key)
 
-    if df_raw is None or len(df_raw) < 12:
+    if df_raw is None or len(df_raw) < SEQ_LEN:
         st.markdown(f"""
         <div class="error-box">
         ❗ 관측 데이터가 부족합니다 (수집: {len(df_raw) if df_raw is not None else 0}행 / 필요: {SEQ_LEN}행 이상).<br>
