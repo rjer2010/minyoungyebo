@@ -392,11 +392,11 @@ with st.sidebar:
     st.markdown("### ⚙️ 설정")
     city_name = st.selectbox("도시 선택", list(CITIES.keys()))
     nx, ny = CITIES[city_name]
-    api_key = st.text_input(
-        "기상청 API 키",
-        type="password",
-        help="data.go.kr에서 발급한 단기예보 서비스 키를 입력하세요."
-    )
+    try:
+        api_key = st.secrets["KMA_API_KEY"]
+    except Exception:
+        st.error("⚠️ Streamlit Secrets에 KMA_API_KEY가 설정되지 않았습니다.")
+        st.stop()
     run_btn = st.button("🔄 예측 실행", type="primary")
     st.markdown("---")
     st.markdown("""
@@ -419,15 +419,11 @@ if not run_btn:
     st.markdown(f"""
     <div class="status-box">
         📍 <b>{city_name}</b> — 내일 ({tomorrow_str}) 시간대별 기온 예측을 시작하려면
-        사이드바에서 API 키를 입력하고 <b>예측 실행</b>을 클릭하세요.
+        사이드바에서 도시를 선택하고 <b>예측 실행</b>을 클릭하세요.
     </div>
     """, unsafe_allow_html=True)
 
 else:
-    if not api_key:
-        st.markdown('<div class="error-box">❗ 사이드바에서 기상청 API 키를 입력해 주세요.</div>', unsafe_allow_html=True)
-        st.stop()
-
     # 모델 로딩
     models = load_models()
     if models[0] is None:
