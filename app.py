@@ -219,8 +219,9 @@ def load_models():
     try:
         with open("models/lstm_weights.pkl", "rb") as f:
             lstm_w = pickle.load(f)
-        with open("models/xgb_model.pkl", "rb") as f:
-            xgb = pickle.load(f)
+        from xgboost import XGBRegressor
+        xgb = XGBRegressor()
+        xgb.load_model("models/xgb_model.json")
         with open("models/lgb_model.pkl", "rb") as f:
             lgb = pickle.load(f)
         with open("models/rf_model.pkl", "rb") as f:
