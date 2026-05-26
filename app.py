@@ -268,50 +268,56 @@ def build_features(df):
 # ──────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def fetch_recent_obs(nx, ny, api_key):
+    """단기예보 API로 최근 실황 대체 수집"""
     rows = []
     now = datetime.now()
-    # 96시간치 요청 — dropna 후에도 최소 24행 보장하기 위해 충분히 수집
-    for h in range(96, 0, -1):
-        dt = now - timedelta(hours=h)
+
+    # 최근 4일치 날짜별로 수집
+    for day_offset in range(4, 0, -1):
+        dt = now - timedelta(days=day_offset)
         base_date = dt.strftime("%Y%m%d")
-        base_time = f"{dt.hour:02d}00"
-        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
-        params = {
-            "serviceKey": api_key,
-            "pageNo": 1,
-            "numOfRows": 50,
-            "dataType": "JSON",
-            "base_date": base_date,
-            "base_time": base_time,
-            "nx": nx,
-            "ny": ny
-        }
-        try:
-            res = requests.get(url, params=params, timeout=6)
-            body = res.json()["response"]["body"]["items"]["item"]
-            row = {"datetime": dt}
-            for it in body:
-                row[it["category"]] = it["obsrValue"]
-            rows.append(row)
-        except Exception:
-            continue
+
+        for base_time in ["0200","0500","0800","1100","1400","1700","2000","2300"]:
+            url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+            params = {
+                "serviceKey": api_key,
+                "pageNo": 1,
+                "numOfRows": 1000,
+                "dataType": "JSON",
+                "base_date": base_date,
+                "base_time": base_time,
+                "nx": nx,
+                "ny": ny
+            }
+            try:
+                res = requests.get(url, params=params, timeout=10)
+                items = res.json()["response"]["body"]["items"]["item"]
+                df_tmp = pd.DataFrame(items)
+
+                # TMP(기온), REH(습도), WSD(풍속)만 추출
+                for category, col in [("TMP","TA"), ("REH","HM"), ("WSD","WS")]:
+                    subset = df_tmp[df_tmp["category"] == category].copy()
+                    for _, row in subset.iterrows():
+                        fcst_dt = datetime.strptime(
+                            row["fcstDate"] + row["fcstTime"], "%Y%m%d%H%M"
+                        )
+                        rows.append({
+                            "datetime": fcst_dt,
+                            col: float(row["fcstValue"])
+                        })
+            except Exception:
+                continue
 
     if not rows:
         return None
 
     df = pd.DataFrame(rows)
-    rename_map = {"T1H": "TA", "REH": "HM", "WSD": "WS"}
-    df = df.rename(columns=rename_map)
 
-    for col in ["TA", "HM", "WS"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df.replace([-9.0, -99.0, -999.0], np.nan, inplace=True)
+    # datetime별로 TA, HM, WS 합치기
+    df = df.groupby("datetime").first().reset_index()
+    df = df.sort_values("datetime").reset_index(drop=True)
     df = df.dropna(subset=["TA"])
-
-    # HM, WS 결측은 forward fill로 보완 (dropna 방지)
-    df[["HM", "WS"]] = df[["HM", "WS"]].ffill().bfill()
+    df[["HM","WS"]] = df[["HM","WS"]].ffill().bfill()
 
     return df
 
