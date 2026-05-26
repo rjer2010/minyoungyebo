@@ -374,8 +374,14 @@ def predict_tomorrow(df_raw, models):
     history_sc = scX.transform(df_feat[FEATURE_COLS].values)
     predictions_sc = []
 
+    # 내일 00시부터 시작하는 실제 시각 계산
+    from datetime import datetime, timedelta
+    tomorrow_start = (datetime.now() + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
     for step in range(24):
-        seq = history_sc[-SEQ_LEN:]  # (24, features)
+        seq = history_sc[-SEQ_LEN:]
         tree_row = history_sc[-1].reshape(1, -1)
 
         # 베이스 모델 예측
@@ -389,25 +395,25 @@ def predict_tomorrow(df_raw, models):
         final_sc = meta_m.predict(stack)[0]
         predictions_sc.append(final_sc)
 
-        # 다음 스텝 피처 업데이트 (lag 시프트)
+        # 다음 스텝 피처 업데이트
         next_row = history_sc[-1].copy()
-        # FEATURE_COLS 인덱스 기준으로 lag 업데이트
-        lag_indices = {
-            "TA_lag_1h": 4, "TA_lag_2h": 5, "TA_lag_3h": 6,
-            "TA_lag_6h": 7, "TA_lag_12h": 8, "TA_lag_24h": 9
-        }
-        # 이전 lag 값들을 한 칸씩 밀기
-        next_row[lag_indices["TA_lag_2h"]] = next_row[lag_indices["TA_lag_1h"]]
-        next_row[lag_indices["TA_lag_3h"]] = next_row[lag_indices["TA_lag_2h"]]
-        next_row[lag_indices["TA_lag_6h"]] = next_row[lag_indices["TA_lag_3h"]]
-        next_row[lag_indices["TA_lag_12h"]] = next_row[lag_indices["TA_lag_6h"]]
-        next_row[lag_indices["TA_lag_24h"]] = next_row[lag_indices["TA_lag_12h"]]
-        next_row[lag_indices["TA_lag_1h"]] = final_sc  # 방금 예측값
 
-        # 시간 피처 업데이트
-        next_hour = (step + 1) % 24
-        next_row[0] = np.sin(2 * np.pi * next_hour / 24)
-        next_row[1] = np.cos(2 * np.pi * next_hour / 24)
+        # ✅ 실제 예측 시각 기준으로 시간/월 피처 정확히 업데이트
+        next_dt = tomorrow_start + timedelta(hours=step + 1)
+        next_hour = next_dt.hour
+        next_month = next_dt.month
+        next_row[0] = np.sin(2 * np.pi * next_hour / 24)   # hour_sin
+        next_row[1] = np.cos(2 * np.pi * next_hour / 24)   # hour_cos
+        next_row[2] = np.sin(2 * np.pi * next_month / 12)  # month_sin
+        next_row[3] = np.cos(2 * np.pi * next_month / 12)  # month_cos
+
+        # lag 피처 시프트
+        next_row[5] = next_row[4]   # lag_2h ← lag_1h
+        next_row[6] = next_row[5]   # lag_3h ← lag_2h
+        next_row[7] = next_row[6]   # lag_6h ← lag_3h
+        next_row[8] = next_row[7]   # lag_12h ← lag_6h
+        next_row[9] = next_row[8]   # lag_24h ← lag_12h
+        next_row[4] = final_sc      # lag_1h ← 방금 예측값
 
         history_sc = np.vstack([history_sc, next_row])
 
