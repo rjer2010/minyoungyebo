@@ -569,7 +569,7 @@ else:
     )
 
     fig.update_layout(
-        title=None,
+        title="",  # undefined 방지
         xaxis=dict(
             title="시각",
             showgrid=False,
