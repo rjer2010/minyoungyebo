@@ -266,55 +266,82 @@ def build_features(df):
 # ──────────────────────────────────────────
 # 기상청 초단기실황 API (최근 48시간)
 # ──────────────────────────────────────────
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)
 def fetch_recent_obs(nx, ny, api_key):
-    """단기예보 API로 최근 실황 대체 수집"""
-    rows = []
+    """
+    초단기실황(최근 6시간) + 단기예보(최근 4일) 조합
+    - 직전 6시간: 실제 관측값 사용 (정확)
+    - 그 이전: 단기예보 예측값으로 보완 (차선)
+    """
+    from datetime import datetime, timedelta
+    rows_obs = {}   # datetime → row
     now = datetime.now()
 
-    # 최근 4일치 날짜별로 수집
+    # ── 1단계: 단기예보로 최근 4일치 베이스 수집 (3시간 간격) ──
     for day_offset in range(4, 0, -1):
         dt = now - timedelta(days=day_offset)
         base_date = dt.strftime("%Y%m%d")
-
         for base_time in ["0200","0500","0800","1100","1400","1700","2000","2300"]:
             url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
             params = {
                 "serviceKey": api_key,
-                "pageNo": 1,
-                "numOfRows": 1000,
+                "pageNo": 1, "numOfRows": 1000,
                 "dataType": "JSON",
                 "base_date": base_date,
                 "base_time": base_time,
-                "nx": nx,
-                "ny": ny
+                "nx": nx, "ny": ny
             }
             try:
-                res = requests.get(url, params=params, timeout=10)
-                items = res.json()["response"]["body"]["items"]["item"]
+                items = requests.get(url, params=params, timeout=10).json()
+                items = items["response"]["body"]["items"]["item"]
                 df_tmp = pd.DataFrame(items)
-
-                # TMP(기온), REH(습도), WSD(풍속)만 추출
-                for category, col in [("TMP","TA"), ("REH","HM"), ("WSD","WS")]:
-                    subset = df_tmp[df_tmp["category"] == category].copy()
+                for category, col in [("TMP","TA"),("REH","HM"),("WSD","WS")]:
+                    subset = df_tmp[df_tmp["category"] == category]
                     for _, row in subset.iterrows():
                         fcst_dt = datetime.strptime(
                             row["fcstDate"] + row["fcstTime"], "%Y%m%d%H%M"
                         )
-                        rows.append({
-                            "datetime": fcst_dt,
-                            col: float(row["fcstValue"])
-                        })
+                        if fcst_dt not in rows_obs:
+                            rows_obs[fcst_dt] = {"datetime": fcst_dt}
+                        rows_obs[fcst_dt][col] = float(row["fcstValue"])
             except Exception:
                 continue
 
-    if not rows:
+    # ── 2단계: 초단기실황으로 최근 6시간 덮어쓰기 (실제 관측값) ──
+    for h in range(6, 0, -1):
+        dt = now - timedelta(hours=h)
+        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+        params = {
+            "serviceKey": api_key,
+            "pageNo": 1, "numOfRows": 50,
+            "dataType": "JSON",
+            "base_date": dt.strftime("%Y%m%d"),
+            "base_time": f"{dt.hour:02d}00",
+            "nx": nx, "ny": ny
+        }
+        try:
+            items = requests.get(url, params=params, timeout=6).json()
+            items = items["response"]["body"]["items"]["item"]
+            row = {"datetime": dt}
+            for it in items:
+                if it["category"] == "T1H": row["TA"] = float(it["obsrValue"])
+                if it["category"] == "REH": row["HM"] = float(it["obsrValue"])
+                if it["category"] == "WSD": row["WS"] = float(it["obsrValue"])
+            # 기존 단기예보 값을 실제 관측값으로 덮어쓰기
+            closest = min(rows_obs.keys(),
+                         key=lambda x: abs((x - dt).total_seconds()),
+                         default=None)
+            if closest and abs((closest - dt).total_seconds()) <= 1800:
+                rows_obs[closest].update(row)
+            else:
+                rows_obs[dt] = row
+        except Exception:
+            continue
+
+    if not rows_obs:
         return None
 
-    df = pd.DataFrame(rows)
-
-    # datetime별로 TA, HM, WS 합치기
-    df = df.groupby("datetime").first().reset_index()
+    df = pd.DataFrame(list(rows_obs.values()))
     df = df.sort_values("datetime").reset_index(drop=True)
     df = df.dropna(subset=["TA"])
     df[["HM","WS"]] = df[["HM","WS"]].ffill().bfill()
