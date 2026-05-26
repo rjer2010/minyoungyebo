@@ -311,7 +311,7 @@ def fetch_recent_obs(nx, ny, api_key):
     df = df.dropna(subset=["TA"])
 
     # HM, WS 결측은 forward fill로 보완 (dropna 방지)
-    df[["HM", "WS"]] = df[["HM", "WS"]].fillna(method="ffill").fillna(method="bfill")
+    df[["HM", "WS"]] = df[["HM", "WS"]].ffill().bfill()
 
     return df
 
