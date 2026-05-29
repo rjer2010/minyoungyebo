@@ -144,9 +144,15 @@ html, body, [class*="css"] {
 SEQ_LEN = 24
 FEATURE_COLS = [
     "hour_sin", "hour_cos", "month_sin", "month_cos",
-    "TA_lag_1h", "TA_lag_2h", "TA_lag_3h", "TA_lag_6h", "TA_lag_12h", "TA_lag_24h",
+    "TA_lag_1h", "TA_lag_2h", "TA_lag_3h", "TA_lag_6h",
+    "TA_lag_12h", "TA_lag_24h",
     "TA_roll_mean_6h", "TA_roll_std_6h", "TA_roll_mean_24h",
-    "diurnal_range", "HM", "WS"
+    "diurnal_range", "HM", "WS",
+    "TA_lag_48h", "TA_lag_168h",
+    "TA_diff_1h", "TA_diff_3h", "TA_diff_6h",
+    "season",
+    "PA_lag_1h", "PA_diff_3h",
+    "TD_lag_1h", "TA_TD_diff",
 ]
 
 CITIES = {
