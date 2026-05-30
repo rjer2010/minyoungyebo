@@ -308,9 +308,11 @@ def fetch_recent_obs(nx, ny, api_key):
                         fcst_dt = datetime.strptime(
                             row["fcstDate"] + row["fcstTime"], "%Y%m%d%H%M"
                         )
-                        if fcst_dt not in rows_obs:
+                        # 현재 시각 이전 데이터만 사용 (미래 예측값 제외)
+                        if fcst_dt <= now and fcst_dt not in rows_obs:
                             rows_obs[fcst_dt] = {"datetime": fcst_dt}
-                        rows_obs[fcst_dt][col] = float(row["fcstValue"])
+                        if fcst_dt <= now:
+                            rows_obs[fcst_dt][col] = float(row["fcstValue"])
             except Exception:
                 continue
 
